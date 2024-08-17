@@ -1,9 +1,12 @@
+#main.py
 import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
+import asyncio
+import re
 import random
-
+#add jokes api : https://v2.jokeapi.dev/joke/Miscellaneous,Dark,Pun
 # Load .env file
 load_dotenv()
 
@@ -18,14 +21,13 @@ if missing_vars:
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 intents = discord.Intents.default()
-intents.voice_states = True
+intents.message_content = True  # Enable message content intent to listen to messages
 intents.guilds = True
-intents.members = True  # Ensure that member intents are enabled to receive member join events
+intents.voice_states = True
+intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-
+bot = commands.Bot(command_prefix=">", intents=intents)
 # Initialize bot
-
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
@@ -65,5 +67,63 @@ async def on_member_join(member):
 
     if channel:
         await channel.send(embed=embed)
+@bot.event
+async def on_message(message):
+    # Ignore messages sent by the bot itself
+    if message.author == bot.user:
+        return
+
+    # Check if the message starts with ">timer"
+    if message.content.startswith(">timer"):
+        # Remove the command prefix ">timer" and strip any leading/trailing whitespace
+        command_content = message.content[len(">timer"):].strip()
+
+        # Check if the remaining content matches the expected timer format (e.g., "30s break!")
+        pattern = re.compile(r'(?P<time>\d+[smhd])\s+(?P<reminder>.+)')
+        match = pattern.match(command_content)
+
+        if match:
+            time_str = match.group('time')
+            reminder = match.group('reminder')
+
+            time_seconds = convert_time_to_seconds(time_str)
+
+            if time_seconds is not None:
+                # Confirm the timer has been set
+                await message.channel.send(f"Timer set for {time_str}. I'll remind you when it's time!")
+
+                # Wait for the specified duration
+                await asyncio.sleep(time_seconds)
+
+                # Send the reminder mentioning the user
+                await message.channel.send(f"{message.author.mention}, {reminder}")
+            else:
+                await message.channel.send("I couldn't understand the time format. Please use something like `1m`, `5m`, `2h`, etc.")
+        else:
+            await message.channel.send("Please use the correct format: `>timer <time> <reminder>`.")
+
+    # Process other commands if any
+    await bot.process_commands(message)
+
+def convert_time_to_seconds(time_str):
+    pattern = re.compile(r'(?P<value>\d+)(?P<unit>[smhd])')
+    matches = pattern.findall(time_str)
+
+    if not matches:
+        return None
+
+    total_seconds = 0
+    for value, unit in matches:
+        value = int(value)
+        if unit == 's':  # seconds
+            total_seconds += value
+        elif unit == 'm':  # minutes
+            total_seconds += value * 60
+        elif unit == 'h':  # hours
+            total_seconds += value * 3600
+        elif unit == 'd':  # days
+            total_seconds += value * 86400
+
+    return total_seconds
 
 bot.run(TOKEN)
